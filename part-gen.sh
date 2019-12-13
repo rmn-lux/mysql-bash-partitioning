@@ -1,6 +1,8 @@
 #!/bin/bash
 mysql=`/usr/bin/which mysql`
 cat=`/usr/bin/which cat`
+collation_conn="utf8_general_ci"
+
 
 ###########################################
 # Partition create
@@ -12,7 +14,7 @@ echo "Get last date of data in the history table..."
 start_date=`$mysql -sN -e "SELECT FROM_UNIXTIME(MIN(clock)) FROM zabbix.history;" | awk '{print $1}'`
 end_date=`date +%F`
 
-if [[ $start_date -eq NULL ]] ; then
+if [[ "$start_date" = "NULL" ]] ; then
   start_date=`echo $end_date`
 fi
 
@@ -45,7 +47,7 @@ echo "Get last date of data in the history_uint table..."
 start_date=`$mysql -sN -e "SELECT FROM_UNIXTIME(MIN(clock)) FROM zabbix.history_uint;" | awk '{print $1}'`
 end_date=`date +%F`
 
-if [[ $start_date -eq NULL ]] ; then
+if [[ "$start_date" = "NULL" ]] ; then
   start_date=`echo $end_date`
 fi
 
@@ -78,7 +80,7 @@ echo "Get last date of data in the history_str table..."
 start_date=`$mysql -sN -e "SELECT FROM_UNIXTIME(MIN(clock)) FROM zabbix.history_str;" | awk '{print $1}'`
 end_date=`date +%F`
 
-if [[ $start_date -eq NULL ]] ; then
+if [[ "$start_date" = "NULL" ]] ; then
   start_date=`echo $end_date`
 fi
 
@@ -111,7 +113,7 @@ echo "Get last date of data in the history_log table..."
 start_date=`$mysql -sN -e "SELECT FROM_UNIXTIME(MIN(clock)) FROM zabbix.history_log;" | awk '{print $1}'`
 end_date=`date +%F`
 
-if [[ $start_date -eq NULL ]] ; then
+if [[ "$start_date" = "NULL" ]] ; then
   start_date=`echo $end_date`
 fi
 
@@ -144,7 +146,7 @@ echo "Get last date of data in the history_text table..."
 start_date=`$mysql -sN -e "SELECT FROM_UNIXTIME(MIN(clock)) FROM zabbix.history_text;" | awk '{print $1}'`
 end_date=`date +%F`
 
-if [[ $start_date -eq NULL ]] ; then
+if [[ "$start_date" = "NULL" ]] ; then
   start_date=`echo $end_date`
 fi
 
@@ -177,7 +179,7 @@ echo "Get last date of data in the trends table..."
 start_date=`$mysql -sN -e "SELECT FROM_UNIXTIME(MIN(clock)) FROM zabbix.trends;" | awk '{print $1}'`
 end_date=`date +%F`
 
-if [[ $start_date -eq NULL ]] ; then
+if [[ "$start_date" = "NULL" ]] ; then
   start_date=`echo $end_date`
 fi
 
@@ -210,7 +212,7 @@ echo "Get last date of data in the trends_uint table..."
 start_date=`$mysql -sN -e "SELECT FROM_UNIXTIME(MIN(clock)) FROM zabbix.trends_uint;" | awk '{print $1}'`
 end_date=`date +%F`
 
-if [[ $start_date -eq NULL ]] ; then
+if [[ "$start_date" = "NULL" ]] ; then
   start_date=`echo $end_date`
 fi
 
@@ -258,7 +260,7 @@ manage_part="CREATE TABLE IF NOT EXISTS \`zabbix\`.\`manage_partitions\` (
   \`last_updated\` DATETIME DEFAULT NULL COMMENT 'When a partition was added last time',
   \`comments\` VARCHAR(128) DEFAULT '1' COMMENT 'Comments',
   PRIMARY KEY (\`tablename\`)
-) ENGINE=INNODB;"
+) ENGINE=INNODB DEFAULT CHARSET=utf8 DEFAULT COLLATE utf8_general_ci;"
 
 echo "$manage_part" | $mysql zabbix && echo "create table manage_partitions OK"
 
@@ -268,7 +270,7 @@ part_hist="CREATE TABLE IF NOT EXISTS \`zabbix\`.\`manage_partitions_history\` (
   \`table_partition_name\` varchar(64) NOT NULL COMMENT 'Zabbix table partition name',
   \`partition_action\` varchar(64) NOT NULL COMMENT 'Zabbix table partition action',
   \`partition_action_date\` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'When a partition was added or dropped'
-) ENGINE=InnoDB;"
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 DEFAULT COLLATE utf8_general_ci;"
 
 echo "$part_hist" | $mysql zabbix && echo "create table manage_partitions_history OK"
 
@@ -294,7 +296,10 @@ DROP EVENT IF EXISTS \`e_zbx_part_mgmt\`;"
 
 echo "$proc_create" | $mysql zabbix && echo "drop procedure OK"
 
-proc="DELIMITER \$$
+proc="SET collation_connection = "$collation_conn";
+
+
+DELIMITER \$$
 CREATE PROCEDURE \`create_next_partitions\`(IN_SCHEMANAME VARCHAR(64))
 BEGIN
     DECLARE TABLENAME_TMP VARCHAR(64);
@@ -470,4 +475,8 @@ CREATE EVENT \`e_zbx_part_mgmt\`
 	END\$$
 DELIMITER ;"
 
-echo "$proc" | $mysql zabbix && echo "successfull, partitioning the end" || echo "Error"
+echo "$proc" | $mysql zabbix && echo "successfull, procedures creating the end" || echo "Error"
+
+# Create new partition via procedure
+echo "Create next partition via procedure"
+$mysql -sN -e "CALL zabbix.create_next_partitions('zabbix');" && echo "OK" || echo "Error"
